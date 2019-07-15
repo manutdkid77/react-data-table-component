@@ -1,8 +1,7 @@
-import React, { Component } from 'react';
+import React, { useReducer, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ThemeProvider } from 'styled-components';
-import memoize from 'memoize-one';
 import merge from 'lodash/merge';
-import { DataTableProvider } from './DataTableContext';
+import { DataTableProvider, reducer } from './DataTableContext';
 import Table from './Table';
 import TableHead from './TableHead';
 import TableFooter from './TableFooter';
@@ -18,380 +17,306 @@ import ProgressWrapper from './ProgressWrapper';
 import TableWrapper from './TableWrapper';
 import { CellBase } from './Cell';
 import NoData from './NoData';
-import Pagination from './Pagination';
+import NativePagination from './Pagination';
 import { propTypes, defaultProps } from './propTypes';
 import { sort, decorateColumns, getSortDirection, getNumberOfPages } from './util';
-import { handleSelectAll, handleRowSelected, handleSort, clearSelected } from './statemgmt';
 import getDefaultTheme from '../themes/default';
 
-class DataTable extends Component {
-  static propTypes = propTypes;
+const DataTable = ({
+  data,
+  columns,
+  keyField,
+  selectableRowsComponent,
+  selectableRowsComponentProps,
+  expandableIcon,
+  onChangeRowsPerPage,
+  onChangePage,
+  paginationServer,
+  paginationTotalRows,
+  paginationDefaultPage,
+  paginationPerPage,
+  paginationRowsPerPageOptions,
+  paginationIconLastPage,
+  paginationIconFirstPage,
+  paginationIconNext,
+  paginationIconPrevious,
+  paginationComponent,
+  paginationComponentOptions,
+  title,
+  customTheme,
+  actions,
+  className,
+  style,
+  responsive,
+  overflowY,
+  overflowYOffset,
+  progressPending,
+  progressComponent,
+  progressCentered,
+  noDataComponent,
+  disabled,
+  noHeader,
+  fixedHeader,
+  fixedHeaderScrollHeight,
+  pagination,
+  subHeader,
+  subHeaderAlign,
+  subHeaderWrap,
+  subHeaderComponent,
+  contextTitle,
+  contextActions,
+  selectableRows,
+  expandableRows,
+  onRowClicked,
+  sortIcon,
+  onSort,
+  sortFunction,
+  striped,
+  highlightOnHover,
+  pointerOnHover,
+  expandableRowsComponent,
+  expandableDisabledField,
+  defaultExpandedField,
+  defaultSortField,
+  defaultSortAsc,
+  clearSelectedRows,
+  onTableUpdate,
+}) => {
+  const initialState = {
+    allSelected: false,
+    selectedCount: 0,
+    selectedRows: [],
+    sortColumn: defaultSortField,
+    sortDirection: getSortDirection(defaultSortAsc),
+    selectedRowsFlag: false,
+    currentPage: paginationDefaultPage,
+    rowsPerPage: paginationPerPage,
+  };
 
-  static defaultProps = defaultProps;
+  const [state, dispatch] = useReducer(reducer, initialState);
 
-  static getDerivedStateFromProps(props, state) {
-    // allow clearing of rows via passed clearSelectedRows toggle prop
-    if (props.clearSelectedRows !== state.clearSelectedRows) {
-      return clearSelected(props.clearSelectedRows);
+  const {
+    rowsPerPage,
+    currentPage,
+    selectedRows,
+    allSelected,
+    selectedCount,
+    sortColumn,
+    sortDirection,
+    selectedRowsFlag,
+  } = state;
+
+  const init = {
+    selectedCount,
+    sortColumn,
+    sortDirection,
+    keyField,
+    selectableRowsComponent,
+    selectableRowsComponentProps,
+    expandableIcon,
+    paginationRowsPerPageOptions,
+    paginationIconLastPage,
+    paginationIconFirstPage,
+    paginationIconNext,
+    paginationIconPrevious,
+    paginationComponentOptions,
+    contextTitle,
+    contextActions,
+    indeterminate: selectedRows.length > 0 && !allSelected,
+    data,
+    pagination,
+    paginationServer,
+  };
+
+  // Basically componentDidUpdate - should only fire after the first re-render subsequent re-render cycles
+  const isFirstRun = useRef(true);
+  useEffect(() => {
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      return;
     }
 
-    return null;
+    onTableUpdate({ allSelected, selectedCount, selectedRows, sortColumn, sortDirection, clearSelectedRows: selectedRowsFlag });
+  }, [allSelected, selectedRowsFlag, onTableUpdate, selectedCount, selectedRows, sortColumn, sortDirection]);
+
+  if (clearSelectedRows !== selectedRowsFlag) {
+    dispatch({ type: 'CLEAR_SELECTED_ROWS', selectedRowsFlag: clearSelectedRows });
   }
 
-  constructor(props) {
-    super(props);
-
-    const sortDirection = getSortDirection(props.defaultSortAsc);
-    this.columns = decorateColumns(props.columns);
-    this.sortedRows = memoize((rows, defaultSortField, direction) => sort(rows, defaultSortField, direction, props.sortFunction));
-    this.mergeTheme = memoize((theme, customTheme) => merge(theme, customTheme));
-    this.PaginationComponent = props.paginationComponent || Pagination;
-    this.state = {
-      allSelected: false,
-      selectedCount: 0,
-      selectedRows: [],
-      sortColumn: props.defaultSortField,
-      sortDirection,
-      clearSelectedRows: false,
-      currentPage: props.paginationDefaultPage,
-      rowsPerPage: props.paginationPerPage,
-    };
-  }
-
-  componentDidUpdate(prevProps, prevState) {
-    const { onTableUpdate } = this.props;
-    const { selectedRows, sortDirection, sortColumn } = this.state;
-
-    if (onTableUpdate &&
-      (prevState.selectedRows !== selectedRows
-      || prevState.sortDirection !== sortDirection
-      || prevState.sortColumn !== sortColumn)
-    ) {
-      const { allSelected, selectedCount, clearSelectedRows } = this.state;
-
-      onTableUpdate({
-        allSelected,
-        selectedCount,
-        selectedRows,
-        sortColumn,
-        sortDirection,
-        clearSelectedRows,
-      });
-    }
-  }
-
-  handleSelectAll = () => {
-    const { data } = this.props;
-
-    this.setState(state => handleSelectAll(data, state.allSelected));
-  }
-
-  handleRowSelected = row => {
-    const { data } = this.props;
-
-    this.setState(state => handleRowSelected(data, row, state.selectedRows));
-  }
-
-  checkIfRowSeleted = row => {
-    const { selectedRows } = this.state;
-
-    return selectedRows.some(srow => srow === row);
-  }
-
-  handleRowClicked = (row, e) => {
-    const { onRowClicked } = this.props;
-
-    if (onRowClicked) {
-      onRowClicked(row, e);
-    }
-  }
-
-  handleSortChange = column => {
-    const { onSort } = this.props;
-
-    this.setState(state => {
-      const newState = handleSort(column.selector, column.sortable, state);
-
-      if (column.sortable && onSort) {
-        onSort(column, newState.sortDirection);
+  const enabledPagination = pagination && !progressPending && data.length > 0;
+  const Pagination = paginationComponent || NativePagination;
+  const decoratedColumns = useMemo(() => decorateColumns(columns), [columns]);
+  const sortedData = useMemo(() => sort(data, sortColumn, sortDirection, sortFunction), [data, sortColumn, sortDirection, sortFunction]);
+  const theme = useMemo(() => merge(getDefaultTheme(), customTheme), [customTheme]);
+  const checkIfRowSeleted = useCallback(row => selectedRows.some(srow => srow === row), [selectedRows]);
+  const handleSelectAll = () => dispatch({ type: 'SELECT_ALL', data });
+  const handleRowSelected = row => dispatch({ type: 'ROW_SELECTED', data, row });
+  const handleRowClicked = (row, e) => onRowClicked(row, e);
+  const handleSortChange = column => {
+    if (column.sortable) {
+      let direction = sortDirection;
+      // change sort direction only if sortColumn (currently selected column) is === the newly clicked column
+      // otherwise, retain sort direction if the column is swiched
+      if (sortColumn === column.selector) {
+        direction = sortDirection === 'asc' ? 'desc' : 'asc';
       }
 
-      return newState;
-    });
-  }
-
-  handleChangePage = currentPage => {
-    const { onChangePage, data, paginationTotalRows } = this.props;
-
-    this.setState({ currentPage });
-
-    if (onChangePage) {
-      onChangePage(currentPage, paginationTotalRows || data.length);
+      dispatch({ type: 'SORT_CHANGE', sortDirection: direction, sortColumn: column.selector });
+      onSort(column, direction);
     }
-  }
+  };
 
-  handleChangeRowsPerPage = (newRowsPerPage, currentPage) => {
-    const { onChangeRowsPerPage, data, paginationTotalRows, paginationServer } = this.props;
+  const handleChangePage = page => {
+    dispatch({ type: 'CHANGE_PAGE', page });
+    onChangePage(page, paginationTotalRows || data.length);
+  };
+
+  const handleChangeRowsPerPage = newRowsPerPage => {
     const rowCount = paginationTotalRows || data.length;
     const updatedPage = getNumberOfPages(rowCount, newRowsPerPage);
     const recalculatedPage = Math.min(currentPage, updatedPage);
 
-    if (onChangeRowsPerPage) {
-      onChangeRowsPerPage(newRowsPerPage, recalculatedPage);
-    }
-
     // update the currentPage for client-side pagination
     // server - side should be handled by onChangeRowsPerPage
     if (!paginationServer) {
-      this.handleChangePage(recalculatedPage);
+      handleChangePage(recalculatedPage);
     }
 
-    this.setState({
-      rowsPerPage: newRowsPerPage,
-      currentPage: recalculatedPage,
-    });
-  }
+    dispatch({ type: 'CHANGE_ROWS_PER_PAGE', page: recalculatedPage, rowsPerPage: newRowsPerPage });
+    onChangeRowsPerPage(newRowsPerPage, recalculatedPage);
+  };
 
-  calculateRows() {
-    const {
-      data,
-      pagination,
-      paginationServer,
-    } = this.props;
-
-    const {
-      currentPage,
-      rowsPerPage,
-      sortDirection,
-      sortColumn,
-    } = this.state;
-
-    const sortedRows = this.sortedRows(data, sortColumn, sortDirection);
-
+  const calculateRows = () => {
     if (pagination && !paginationServer) {
       // when using client-side pagination we can just slice the data set
       const lastIndex = currentPage * rowsPerPage;
       const firstIndex = lastIndex - rowsPerPage;
 
-      return sortedRows.slice(firstIndex, lastIndex);
+      return sortedData.slice(firstIndex, lastIndex);
     }
 
-    return sortedRows;
-  }
+    return sortedData;
+  };
 
-  renderColumns() {
-    const { sortIcon } = this.props;
+  const renderColumns = () => (
+    decoratedColumns.map(column => (
+      <TableCol
+        key={column.id}
+        column={column}
+        onColumnClick={handleSortChange}
+        sortIcon={sortIcon}
+      />
+    ))
+  );
 
-    return (
-      this.columns.map(column => (
-        <TableCol
-          key={column.id}
-          column={column}
-          onColumnClick={this.handleSortChange}
-          sortIcon={sortIcon}
-        />
-      ))
-    );
-  }
+  const renderRows = () => (
+    calculateRows().map((row, i) => (
+      <TableRow
+        key={row[keyField] || i}
+        row={row}
+        columns={decoratedColumns}
+        keyField={keyField}
+        selectableRows={selectableRows}
+        expandableRows={expandableRows}
+        striped={striped}
+        highlightOnHover={highlightOnHover}
+        pointerOnHover={pointerOnHover}
+        expandableRowsComponent={expandableRowsComponent}
+        expandableDisabledField={expandableDisabledField}
+        defaultExpanded={row[defaultExpandedField] || false}
+        onRowClicked={handleRowClicked}
+        onRowSelected={handleRowSelected}
+        isRowSelected={checkIfRowSeleted}
+      />
+    ))
+  );
 
-  renderRows() {
-    const {
-      keyField,
-      defaultExpandedField,
-      selectableRows,
-      expandableRows,
-      striped,
-      highlightOnHover,
-      pointerOnHover,
-      expandableRowsComponent,
-      expandableDisabledField,
-    } = this.props;
+  const renderTableHead = () => (
+    <TableHead className="rdt_TableHead">
+      <TableHeadRow className="rdt_TableHeadRow">
+        {selectableRows && <TableColCheckbox onClick={handleSelectAll} checked={allSelected} />}
+        {expandableRows && <CellBase style={{ flex: '0 0 56px' }} />}
+        {renderColumns()}
+      </TableHeadRow>
+    </TableHead>
+  );
 
-    return (
-      this.calculateRows().map((row, i) => (
-        <TableRow
-          key={row[keyField] || i}
-          row={row}
-          columns={this.columns}
-          keyField={keyField}
-          selectableRows={selectableRows}
-          expandableRows={expandableRows}
-          striped={striped}
-          highlightOnHover={highlightOnHover}
-          pointerOnHover={pointerOnHover}
-          expandableRowsComponent={expandableRowsComponent}
-          expandableDisabledField={expandableDisabledField}
-          defaultExpanded={row[defaultExpandedField] || false}
-          onRowClicked={this.handleRowClicked}
-          onRowSelected={this.handleRowSelected}
-          isRowSelected={this.checkIfRowSeleted}
-        />
-      ))
-    );
-  }
+  return (
+    <ThemeProvider theme={theme}>
+      <DataTableProvider initialState={init}>
+        <ResponsiveWrapper
+          responsive={responsive}
+          className={className}
+          style={style}
+          overflowYOffset={overflowYOffset}
+          overflowY={overflowY}
+        >
+          {!noHeader && (
+            <TableHeader
+              title={title}
+              actions={actions}
+              pending={progressPending}
+            />
+          )}
 
-  renderTableHead() {
-    const {
-      selectableRows,
-      expandableRows,
-    } = this.props;
+          {subHeader && (
+            <TableSubheader
+              align={subHeaderAlign}
+              wrapContent={subHeaderWrap}
+              component={subHeaderComponent}
+            />
+          )}
 
-    return (
-      <TableHead className="rdt_TableHead">
-        <TableHeadRow className="rdt_TableHeadRow">
-          {selectableRows && <TableColCheckbox onClick={this.handleSelectAll} />}
-          {expandableRows && <CellBase style={{ flex: '0 0 56px' }} />}
-          {this.renderColumns()}
-        </TableHeadRow>
-      </TableHead>
-    );
-  }
-
-  render() {
-    const {
-      data,
-      keyField,
-      selectableRowsComponent,
-      selectableRowsComponentProps,
-      expandableIcon,
-      paginationTotalRows,
-      paginationRowsPerPageOptions,
-      paginationIconLastPage,
-      paginationIconFirstPage,
-      paginationIconNext,
-      paginationIconPrevious,
-      paginationComponentOptions,
-      title,
-      customTheme,
-      actions,
-      className,
-      style,
-      responsive,
-      overflowY,
-      overflowYOffset,
-      progressPending,
-      progressComponent,
-      progressCentered,
-      noDataComponent,
-      disabled,
-      noHeader,
-      fixedHeader,
-      fixedHeaderScrollHeight,
-      pagination,
-      subHeader,
-      subHeaderAlign,
-      subHeaderWrap,
-      subHeaderComponent,
-      contextTitle,
-      contextActions,
-    } = this.props;
-
-    const {
-      rowsPerPage,
-      currentPage,
-      selectedRows,
-      allSelected,
-      selectedCount,
-      sortColumn,
-      sortDirection,
-    } = this.state;
-
-    const theme = this.mergeTheme(getDefaultTheme(), customTheme);
-    const enabledPagination = pagination && !progressPending && data.length > 0;
-    const init = {
-      allSelected,
-      selectedCount,
-      sortColumn,
-      sortDirection,
-      keyField,
-      selectableRowsComponent,
-      selectableRowsComponentProps,
-      expandableIcon,
-      paginationRowsPerPageOptions,
-      paginationIconLastPage,
-      paginationIconFirstPage,
-      paginationIconNext,
-      paginationIconPrevious,
-      paginationComponentOptions,
-      contextTitle,
-      contextActions,
-      indeterminate: selectedRows.length > 0 && !allSelected,
-    };
-
-    return (
-      <ThemeProvider theme={theme}>
-        <DataTableProvider initialState={init}>
-          <ResponsiveWrapper
-            responsive={responsive}
-            className={className}
-            style={style}
-            overflowYOffset={overflowYOffset}
-            overflowY={overflowY}
-          >
-            {!noHeader && (
-              <TableHeader
-                title={title}
-                actions={actions}
-                pending={progressPending}
+          <TableWrapper>
+            {progressPending && (
+              <ProgressWrapper
+                component={progressComponent}
+                centered={progressCentered}
               />
             )}
 
-            {subHeader && (
-              <TableSubheader
-                align={subHeaderAlign}
-                wrapContent={subHeaderWrap}
-                component={subHeaderComponent}
-              />
-            )}
+            {!data.length > 0 && !progressPending &&
+              <NoData component={noDataComponent} />}
 
-            <TableWrapper>
-              {progressPending && (
-                <ProgressWrapper
-                  component={progressComponent}
-                  centered={progressCentered}
-                />
-              )}
+            {data.length > 0 && (
+              <Table
+                disabled={disabled}
+                className="rdt_Table"
+              >
+                {renderTableHead()}
 
-              {!data.length > 0 && !progressPending &&
-                <NoData component={noDataComponent} />}
-
-              {data.length > 0 && (
-                <Table
-                  disabled={disabled}
-                  className="rdt_Table"
+                <TableBody
+                  fixedHeader={fixedHeader}
+                  fixedHeaderScrollHeight={fixedHeaderScrollHeight}
+                  hasOffset={overflowY}
+                  offset={overflowYOffset}
+                  className="rdt_TableBody"
                 >
-                  {this.renderTableHead()}
+                  {renderRows()}
+                </TableBody>
+              </Table>
+            )}
 
-                  <TableBody
-                    fixedHeader={fixedHeader}
-                    fixedHeaderScrollHeight={fixedHeaderScrollHeight}
-                    hasOffset={overflowY}
-                    offset={overflowYOffset}
-                    className="rdt_TableBody"
-                  >
-                    {this.renderRows()}
-                  </TableBody>
-                </Table>
-              )}
+            {enabledPagination && (
+              <TableFooter className="rdt_TableFooter">
+                <Pagination
+                  onChangePage={handleChangePage}
+                  onChangeRowsPerPage={handleChangeRowsPerPage}
+                  rowCount={paginationTotalRows || data.length}
+                  currentPage={currentPage}
+                  rowsPerPage={rowsPerPage}
+                  theme={theme}
+                />
+              </TableFooter>
+            )}
+          </TableWrapper>
+        </ResponsiveWrapper>
+      </DataTableProvider>
+    </ThemeProvider>
+  );
+};
 
-              {enabledPagination && (
-                <TableFooter className="rdt_TableFooter">
-                  <this.PaginationComponent
-                    onChangePage={this.handleChangePage}
-                    onChangeRowsPerPage={this.handleChangeRowsPerPage}
-                    rowCount={paginationTotalRows || data.length}
-                    currentPage={currentPage}
-                    rowsPerPage={rowsPerPage}
-                    theme={theme}
-                  />
-                </TableFooter>
-              )}
-            </TableWrapper>
-          </ResponsiveWrapper>
-        </DataTableProvider>
-      </ThemeProvider>
-    );
-  }
-}
+DataTable.propTypes = propTypes;
+DataTable.defaultProps = defaultProps;
 
 export default DataTable;

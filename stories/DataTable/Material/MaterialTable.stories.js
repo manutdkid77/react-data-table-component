@@ -110,7 +110,6 @@ class MaterialTable extends PureComponent {
     ];
 
     const { data, toggleCleared } = this.state;
-
     return (
       <Card style={{ height: '100%' }}>
         <DataTable
@@ -128,7 +127,6 @@ class MaterialTable extends PureComponent {
           onTableUpdate={this.handleChange}
           clearSelectedRows={toggleCleared}
           onRowClicked={this.handleRowClicked}
-          pagination
         />
       </Card>
     );

@@ -1,4 +1,4 @@
-import React, { memo, useContext } from 'react';
+import React, { useContext } from 'react';
 import PropTypes from 'prop-types';
 import styled from 'styled-components';
 import { DataTableContext } from './DataTableContext';
@@ -14,8 +14,8 @@ const TableColStyle = styled(CellBase)`
   min-height: ${props => props.theme.header.height};
 `;
 
-const TableCol = memo(({ onClick }) => {
-  const { selectableRowsComponent, selectableRowsComponentProps, allSelected, indeterminate } = useContext(DataTableContext);
+const TableCol = ({ onClick, checked }) => {
+  const { selectableRowsComponent, selectableRowsComponentProps, indeterminate } = useContext(DataTableContext);
 
   return (
     <TableColStyle className="rdt_TableCol">
@@ -24,19 +24,21 @@ const TableCol = memo(({ onClick }) => {
         component={selectableRowsComponent}
         componentOptions={selectableRowsComponentProps}
         onClick={onClick}
-        checked={allSelected}
+        checked={checked}
         indeterminate={indeterminate}
       />
     </TableColStyle>
   );
-});
+};
 
 TableCol.propTypes = {
   onClick: PropTypes.func,
+  checked: PropTypes.bool,
 };
 
 TableCol.defaultProps = {
   onClick: null,
+  checked: false,
 };
 
 export default TableCol;
